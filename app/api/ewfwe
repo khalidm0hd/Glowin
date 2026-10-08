@@ -1,0 +1,119 @@
+import { supabase } from '../lib/supabaseClient';
+
+export interface Product {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  subcategory: string;
+  price: number;
+  size: string;
+  unit?: string;
+  description: string;
+  benefits: string[];
+  howToApply: string;
+  ingredients?: string;
+  images: string[];
+  availability: 'in_stock' | 'pre_order' | 'out_of_stock';
+  searchKeywords: string[];
+}
+
+// Keep hardcoded fallback products so your frontend NEVER breaks or shows blank UI
+export const FALLBACK_PRODUCTS: Product[] = [
+  {
+    id: 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44',
+    name: 'Madagascar Centella Hyalu-Cica Water-Fit Sun Serum SPF50+ PA++++',
+    brand: 'SKIN1004',
+    category: 'Sun Care',
+    subcategory: 'Sunscreen',
+    price: 68.00,
+    size: '50ml',
+    description: 'A non-nano chemical sunscreen that blocks UV rays while simultaneously hydrating the skin.',
+    benefits: [
+      'Deeply hydrating Hyalu-Cica Formula',
+      'Soothes sensitive and irritated skin',
+      'Lightweight serum texture with zero white cast'
+    ],
+    howToApply: 'Apply as the last step of your morning skincare routine. Reapply every 2-3 hours.',
+    ingredients: 'Centella Asiatica Extract, Water, Niacinamide...',
+    images: ['https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&q=80&w=800'],
+    availability: 'in_stock',
+    searchKeywords: ['sunscreen', 'centella', 'skin1004', 'spf50']
+  }
+];
+
+/**
+ * Fetch active products from Supabase with relational categories and images.
+ * Returns FALLBACK_PRODUCTS if Supabase returns no data or fails.
+ */
+export async function getProductsFromSupabase(): Promise<Product[]> {
+  try {
+    const { data: dbProducts, error } = await supabase
+      .from('products')
+      .select(`
+        id,
+        name,
+        brand,
+        subcategory,
+        price_sar,
+        size,
+        unit,
+        description,
+        key_benefits,
+        how_to_apply,
+        ingredients,
+        search_keywords,
+        availability_status,
+        categories ( name ),
+        product_images ( image_url, display_order )
+      `)
+      .eq('active', true);
+
+    if (error) {
+      console.error('Error fetching products from Supabase:', error);
+      return FALLBACK_PRODUCTS;
+    }
+
+    if (!dbProducts || dbProducts.length === 0) {
+      return FALLBACK_PRODUCTS;
+    }
+
+    return dbProducts.map((p: any) => {
+      // Map category name from joined relational data
+      const categoryName = p.categories?.name || 'General';
+
+      // Map and sort images by display_order
+      const sortedImages = p.product_images
+        ? p.product_images
+            .sort((a: any, b: any) => a.display_order - b.display_order)
+            .map((img: any) => img.image_url)
+        : [];
+
+      // Split key_benefits string into an array if needed
+      const benefitsArray = p.key_benefits
+        ? p.key_benefits.split(';').map((b: string) => b.trim())
+        : [];
+
+      return {
+        id: p.id,
+        name: p.name,
+        brand: p.brand || 'Glowin',
+        category: categoryName,
+        subcategory: p.subcategory || '',
+        price: Number(p.price_sar),
+        size: `${p.size || ''}${p.unit ? p.unit.toLowerCase() : ''}`,
+        unit: p.unit || '',
+        description: p.description || '',
+        benefits: benefitsArray,
+        howToApply: p.how_to_apply || '',
+        ingredients: p.ingredients || '',
+        images: sortedImages.length > 0 ? sortedImages : ['/placeholder.png'],
+        availability: (p.availability_status as 'in_stock' | 'pre_order' | 'out_of_stock') || 'in_stock',
+        searchKeywords: p.search_keywords || []
+      };
+    });
+  } catch (err) {
+    console.error('Unexpected error loading products from Supabase:', err);
+    return FALLBACK_PRODUCTS;
+  }
+}

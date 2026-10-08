@@ -1,0 +1,373 @@
+"use client";
+
+import { useState } from "react";
+import { CurrencyType } from "./Header";
+// FIX 1: Removed 'PRODUCTS' from the import since we pass it via props now
+import { Product } from "../data/products";
+import ProductModal from "./ProductModal";
+
+interface ProductListProps {
+  language?: "EN" | "AR";
+  currency?: CurrencyType;
+  onAddToCart?: (product: Product, quantity?: number) => void;
+  searchQuery?: string;
+  // FIX 2: Added 'products' to the interface so page.tsx can pass it down
+  products?: Product[]; 
+}
+
+const EXCHANGE_RATES: Record<CurrencyType, { rate: number; symbol: string }> = {
+  SAR: { rate: 1, symbol: "SAR" },
+  USD: { rate: 0.27, symbol: "$" },
+  THB: { rate: 9.5, symbol: "฿" },
+};
+
+const WHATSAPP_NUMBER = "+66908955177";
+
+// Exact required category list
+const CATEGORIES = [
+  { id: "all", labelEn: "All Products", labelAr: "جميع المنتجات" },
+  { id: "Skincare", labelEn: "Skincare", labelAr: "العناية بالبشرة" },
+  { id: "Makeup", labelEn: "Makeup", labelAr: "المكياج" },
+  { id: "Haircare", labelEn: "Haircare", labelAr: "العناية بالشعر" },
+  { id: "Body Care", labelEn: "Body Care", labelAr: "العناية بالجسم" },
+  { id: "Tools & Brushes", labelEn: "Tools & Brushes", labelAr: "الأدوات والفرش" },
+];
+
+export default function ProductList({
+  language = "EN",
+  currency = "SAR",
+  onAddToCart,
+  searchQuery = "",
+  // FIX 3: Accept 'products' from props (defaulting to an empty array)
+  products = [], 
+}: ProductListProps) {
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [imageIndices, setImageIndices] = useState<Record<string, number>>({});
+  
+  // Directly typed to Product from products.ts
+  const [selectedModalProduct, setSelectedModalProduct] = useState<Product | null>(null);
+  
+  const [wishlist, setWishlist] = useState<Record<string, boolean>>({});
+  const [visibleCount, setVisibleCount] = useState<number>(6);
+
+  const isArabic = language === "AR";
+
+  // FIX 4: Use the 'products' prop here instead of the static 'PRODUCTS' import
+  const filteredProducts = products.filter((product) => {
+    // Flexible matching to ensure "Skincare" matches legacy tags like "FACE & SERUMS" or "Sun Care"
+    const productCat = (product.category || "").toLowerCase();
+    const selectedCat = selectedCategory.toLowerCase();
+
+    let matchesCategory = false;
+
+    if (selectedCategory === "all") {
+      matchesCategory = true;
+    } else if (selectedCat === "skincare") {
+      matchesCategory =
+        productCat.includes("skincare") ||
+        productCat.includes("face") ||
+        productCat.includes("serum") ||
+        productCat.includes("sun");
+    } else if (selectedCat === "tools & brushes") {
+      matchesCategory =
+        productCat.includes("tools") ||
+        productCat.includes("brushes") ||
+        productCat.includes("spa");
+    } else {
+      matchesCategory = productCat === selectedCat;
+    }
+
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return matchesCategory;
+
+    const nameMatch = product.name?.toLowerCase().includes(query);
+    const categoryMatch = product.category?.toLowerCase().includes(query);
+    const descriptionMatch = product.description?.toLowerCase().includes(query);
+    
+    // FIX 5: Use 'benefits' (which is now an array) instead of legacy 'keyBenefits'
+    const benefitsString = Array.isArray(product.benefits) ? product.benefits.join(" ") : "";
+    const benefitsMatch = benefitsString.toLowerCase().includes(query);
+
+    return (
+      matchesCategory &&
+      (Boolean(nameMatch) ||
+        Boolean(categoryMatch) ||
+        Boolean(descriptionMatch) ||
+        Boolean(benefitsMatch))
+    );
+  });
+
+  const visibleProducts = filteredProducts.slice(0, visibleCount);
+
+  const handlePrevImage = (e: React.MouseEvent, id: string, total: number) => {
+    e.stopPropagation();
+    setImageIndices((prev) => ({
+      ...prev,
+      [id]: (prev[id] ?? 0) > 0 ? (prev[id] ?? 0) - 1 : total - 1,
+    }));
+  };
+
+  const handleNextImage = (e: React.MouseEvent, id: string, total: number) => {
+    e.stopPropagation();
+    setImageIndices((prev) => ({
+      ...prev,
+      [id]: (prev[id] ?? 0) < total - 1 ? (prev[id] ?? 0) + 1 : 0,
+    }));
+  };
+
+  const toggleWishlist = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setWishlist((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const formatPrice = (basePriceSar: number) => {
+    const config = EXCHANGE_RATES[currency] ?? EXCHANGE_RATES.SAR;
+    const converted = (basePriceSar * config.rate).toFixed(
+      currency === "USD" ? 2 : 0
+    );
+
+    return currency === "USD"
+      ? `${config.symbol}${converted}`
+      : `${converted} ${config.symbol}`;
+  };
+
+  const whatsappMessage = encodeURIComponent(
+    `Hi Glowin, I'm looking for ${searchQuery}. Is it available?`
+  );
+  const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER.replace(
+    /[^0-9]/g,
+    ""
+  )}?text=${whatsappMessage}`;
+
+  return (
+    <section className="py-10 px-6 max-w-6xl mx-auto" dir={isArabic ? "rtl" : "ltr"}>
+      {/* Category Tabs */}
+      <div className="flex items-center gap-3 overflow-x-auto pb-4 scrollbar-none">
+        {CATEGORIES.map((cat) => (
+          <button
+            key={cat.id}
+            onClick={() => {
+              setSelectedCategory(cat.id);
+              setVisibleCount(6);
+            }}
+            className={`px-6 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
+              selectedCategory === cat.id
+                ? "bg-[#2C2623] text-white shadow-sm"
+                : "bg-white border border-[#EAE3D2] text-[#6B6155] hover:border-[#C5A880]"
+            }`}
+          >
+            {isArabic ? cat.labelAr : cat.labelEn}
+          </button>
+        ))}
+      </div>
+
+      <div className="w-full border-b border-[#EAE3D2] my-6" />
+
+      {/* Empty State */}
+      {filteredProducts.length === 0 ? (
+        <div className="py-20 flex flex-col items-center justify-center text-center">
+          <p className="font-serif text-lg text-[#8C827A] mb-12">
+            {isArabic ? "لم نجد نتائج." : "No treasures found."}
+          </p>
+
+          <h3 className="font-serif text-2xl md:text-3xl text-[#2C2623] mb-2">
+            {isArabic ? "لم تجد ما تبحث عنه؟" : "Can't find what you're looking for?"}
+          </h3>
+          <p className="text-xs md:text-sm text-[#8C827A] mb-6">
+            {isArabic
+              ? "تواصل معنا وسنتحقق من التوفر لك."
+              : "Message us and we'll check availability for you."}
+          </p>
+
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-[#2C2623] hover:bg-[#3D3734] text-white px-7 py-3 rounded-full text-xs font-semibold tracking-wider transition-all flex items-center gap-2 shadow-sm"
+          >
+            {isArabic ? "تواصل عبر واتساب ←" : "WHATSAPP US →"}
+          </a>
+        </div>
+      ) : (
+        /* Product Grid */
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8">
+          {visibleProducts.map((product) => {
+            const totalImages = product.images?.length ?? 0;
+            const currentImageIdx = imageIndices[product.id] ?? 0;
+            const currentImage = totalImages > 0 ? product.images[currentImageIdx] : "";
+            const isLiked = wishlist[product.id] ?? false;
+
+            return (
+              <div
+                key={product.id}
+                className="flex flex-col justify-between group cursor-pointer"
+                onClick={() => setSelectedModalProduct(product)}
+              >
+                <div>
+                  <div className="relative aspect-[4/3] rounded-2xl bg-[#F5F2EC] overflow-hidden mb-3 group/img">
+                    {currentImage && (
+                      <img
+                        src={currentImage}
+                        alt={product.name}
+                        className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover/img:scale-110"
+                      />
+                    )}
+
+                    {/* Wishlist Button */}
+                    <button
+                      onClick={(e) => toggleWishlist(e, product.id)}
+                      className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center text-stone-600 hover:text-red-500 transition-colors z-10"
+                      aria-label="Add to wishlist"
+                    >
+                      <svg
+                        className={`w-4 h-4 transition-colors ${
+                          isLiked ? "fill-red-500 text-red-500" : "fill-none"
+                        }`}
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={1.5}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"
+                        />
+                      </svg>
+                    </button>
+
+                    {/* Image Navigation Controls */}
+                    {totalImages > 1 && (
+                      <>
+                        <button
+                          onClick={(e) => handlePrevImage(e, product.id, totalImages)}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center text-stone-700 hover:bg-white transition-all shadow-sm z-10"
+                        >
+                          <svg
+                            className={`w-3.5 h-3.5 ${isArabic ? "rotate-180" : ""}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M15.75 19.5L8.25 12l7.5-7.5"
+                            />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={(e) => handleNextImage(e, product.id, totalImages)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center text-stone-700 hover:bg-white transition-all shadow-sm z-10"
+                        >
+                          <svg
+                            className={`w-3.5 h-3.5 ${isArabic ? "rotate-180" : ""}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M8.25 4.5l7.5 7.5-7.5 7.5"
+                            />
+                          </svg>
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-semibold tracking-wider text-[#A39281] uppercase">
+                      {product.category}
+                    </span>
+                    <span className="text-[10px] font-semibold text-[#A39281] uppercase">
+                      {product.size}
+                    </span>
+                  </div>
+
+                  <h3 className="font-serif text-sm text-[#2C2623] mb-4 min-h-[40px] leading-snug hover:text-[#C5A880] transition-colors">
+                    {product.name}
+                  </h3>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-xs font-semibold text-[#2C2623]">
+                    {formatPrice(product.price)}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddToCart?.(product, 1);
+                    }}
+                    className="px-4 py-1.5 rounded-full border border-[#DCD5C5] text-[11px] font-semibold text-[#5A5047] hover:bg-[#2C2623] hover:text-white hover:border-[#2C2623] transition-all uppercase tracking-wider"
+                  >
+                    {isArabic ? "أضف للسلة" : "ADD TO CART"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Pagination / Load More */}
+      {filteredProducts.length > 0 && visibleCount < filteredProducts.length && (
+        <div className="flex justify-center mt-12">
+          <button
+            onClick={() => setVisibleCount((prev) => prev + 6)}
+            className="px-8 py-3 rounded-full border border-[#DCD5C5] text-xs font-semibold text-[#5A5047] hover:bg-[#2C2623] hover:text-white hover:border-[#2C2623] transition-all uppercase tracking-widest flex items-center gap-2"
+          >
+            {isArabic ? "← تحميل المزيد من المنتجات" : "LOAD MORE PRODUCTS →"}
+          </button>
+        </div>
+      )}
+
+      {/* Product Detail Modal */}
+      <ProductModal
+        product={selectedModalProduct}
+        onClose={() => setSelectedModalProduct(null)}
+        onAddToCart={(qty) => {
+          if (selectedModalProduct) {
+            onAddToCart?.(selectedModalProduct, qty);
+          }
+        }}
+        language={language}
+      />
+    </section>
+  );
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+How to link it to your Hamburger Menu:
+In your Mobile / Hamburger Menu drawer component, make sure the SHIPPING link points directly to #shipping:
+
+TypeScript
+<a 
+  href="#shipping" 
+  onClick={onClose} 
+  className="text-stone-700 hover:text-black font-semibold"
+>
+  SHIPPING
+</a>
+
+\\
+

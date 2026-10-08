@@ -1,0 +1,233 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { Product } from "../data/products";
+
+interface ProductModalProps {
+  product: (Omit<Product, "benefits"> & {
+    benefits?: string[] | string | { en: string; ar: string };
+    howToApply?: string | { en: string; ar: string };
+    key_benefits?: string;
+    how_to_use?: string;
+  }) | null;
+  onClose: () => void;
+  onAddToCart: (quantity: number) => void;
+  language?: "EN" | "AR";
+}
+
+export default function ProductModal({
+  product,
+  onClose,
+  onAddToCart,
+  language = "EN",
+}: ProductModalProps) {
+  const [modalImageIndex, setModalImageIndex] = useState<number>(0);
+  const [modalQuantity, setModalQuantity] = useState<number>(1);
+
+  useEffect(() => {
+    if (product) {
+      setModalImageIndex(0);
+      setModalQuantity(1);
+    }
+  }, [product]);
+
+  if (!product) return null;
+
+  const isArabic = language === "AR";
+
+  const handleAddToCartSubmit = () => {
+    onAddToCart(modalQuantity);
+    onClose();
+  };
+
+  // Safely parse JSON or fallback to raw string
+  const parseLocalizedField = (fieldValue: any): string => {
+    if (!fieldValue) return "";
+    if (typeof fieldValue === "object") {
+      return isArabic ? fieldValue.ar || fieldValue.en || "" : fieldValue.en || fieldValue.ar || "";
+    }
+    if (typeof fieldValue === "string") {
+      try {
+        const parsed = JSON.parse(fieldValue);
+        if (parsed && typeof parsed === "object") {
+          return isArabic ? parsed.ar || parsed.en || "" : parsed.en || parsed.ar || "";
+        }
+      } catch (e) {
+        // Not JSON, return as regular string
+      }
+      return fieldValue;
+    }
+    return "";
+  };
+
+  const getBenefitsArray = (): string[] => {
+    const rawBenefits = (product as any)?.key_benefits || (product as any)?.benefits;
+    const text = parseLocalizedField(rawBenefits);
+    
+    if (!text) {
+      return [
+        "It effectively removes deep-seated dirt from pollution and dissolves clogged pores.",
+        "Removes blackheads and fine hairs."
+      ];
+    }
+
+    return text
+      .replace(/[{}]/g, "")
+      .split(/•|\n/)
+      .map((b) => b.replace(/"/g, "").trim())
+      .filter(Boolean);
+  };
+
+  const descriptionText = parseLocalizedField(product.description);
+  const howToApplyText = parseLocalizedField((product as any)?.how_to_use || (product as any)?.howToApply);
+  const benefitsList = getBenefitsArray();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-[#FAF8F5] rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 md:p-8 relative shadow-2xl border border-[#EAE3D2]">
+        <button
+          onClick={onClose}
+          className="absolute top-5 right-5 text-stone-500 hover:text-black p-2 rounded-full hover:bg-stone-200/50 transition-colors"
+          aria-label="Close modal"
+        >
+          ✕
+        </button>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8" dir={isArabic ? "rtl" : "ltr"}>
+          {/* Gallery Section */}
+          <div>
+            <div className="aspect-square rounded-2xl overflow-hidden bg-white mb-4 border border-[#EAE3D2]">
+              <img
+                src={product.images[modalImageIndex]}
+                alt={product.name}
+                className="w-full h-full object-cover transition-all duration-300"
+              />
+            </div>
+
+            <div className="grid grid-cols-4 gap-2">
+              {product.images.map((img, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setModalImageIndex(idx)}
+                  className={`aspect-square rounded-xl overflow-hidden border-2 transition-all ${
+                    modalImageIndex === idx
+                      ? "border-[#2C2623]"
+                      : "border-transparent opacity-60 hover:opacity-100"
+                  }`}
+                >
+                  <img
+                    src={img}
+                    alt="Thumbnail"
+                    className="w-full h-full object-cover"
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Details & Actions Section */}
+          <div className="flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-bold tracking-widest text-[#A39281] uppercase">
+                  {product.category}
+                </span>
+              </div>
+
+              <h2 className={`font-serif text-2xl text-[#2C2623] mt-1 mb-2 ${isArabic ? "text-right" : "text-left"}`}>
+                {product.name}
+              </h2>
+
+              {/* Price on Left/Right depending on lang, Size opposite */}
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-base font-semibold text-[#2C2623]">
+                  {product.price} SAR
+                </p>
+                <span className="text-[11px] font-bold text-[#A39281] uppercase tracking-widest">
+                  {product.size}
+                </span>
+              </div>
+
+              {/* Description Section */}
+              <div className="mb-6">
+                <h4 className={`text-xs font-bold text-[#2C2623] uppercase tracking-wider mb-1 ${isArabic ? "text-right" : "text-left"}`}>
+                  {isArabic ? "الوصف" : "DESCRIPTION"}
+                </h4>
+                <p className={`text-xs text-[#6B6155] leading-relaxed ${isArabic ? "text-right" : "text-left"}`}>
+                  {descriptionText || product.description}
+                </p>
+              </div>
+
+              {/* Quantity Selector and Add to Cart */}
+              <div className="flex items-center gap-3 mb-8">
+                <div className="flex items-center border border-[#DCD5C5] rounded-full px-3 py-1.5 bg-white shadow-sm">
+                  <button
+                    onClick={() => setModalQuantity((q) => Math.max(1, q - 1))}
+                    className="text-base font-bold text-[#2C2623] hover:text-[#C5A880] px-2 leading-none transition-colors"
+                  >
+                    -
+                  </button>
+                  <span className="text-sm font-bold text-[#2C2623] px-3">
+                    {modalQuantity}
+                  </span>
+                  <button
+                    onClick={() => setModalQuantity((q) => q + 1)}
+                    className="text-base font-bold text-[#2C2623] hover:text-[#C5A880] px-2 leading-none transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+
+                <button
+                  onClick={handleAddToCartSubmit}
+                  className="flex-1 bg-[#2C2623] text-white py-2.5 rounded-full text-xs font-semibold hover:bg-[#3D3531] transition-all"
+                >
+                  {isArabic ? "أضف للسلة" : "ADD TO CART"}
+                </button>
+              </div>
+
+              {/* Product Specifications */}
+              <div className="border-t border-[#EAE3D2] pt-4 space-y-4">
+                {benefitsList.length > 0 && (
+                  <div>
+                    <h4 className={`text-xs font-bold text-[#2C2623] uppercase tracking-wider mb-2 ${isArabic ? "text-right" : "text-left"}`}>
+                      {isArabic ? "الفوائد الرئيسية" : "KEY BENEFITS"}
+                    </h4>
+                    <ul className={`space-y-1.5 text-xs text-[#6B6155] leading-relaxed ${isArabic ? "pr-4 list-disc" : "pl-4 list-disc"}`}>
+                      {benefitsList.map((benefit, index) => (
+                        <li key={index}>{benefit}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {howToApplyText && (
+                  <div className="border-t border-[#EAE3D2] pt-3">
+                    <h4 className={`text-xs font-bold text-[#2C2623] uppercase tracking-wider mb-1 ${isArabic ? "text-right" : "text-left"}`}>
+                      {isArabic ? "طريقة الاستخدام" : "HOW TO APPLY"}
+                    </h4>
+                    <p className={`text-xs text-[#6B6155] leading-relaxed ${isArabic ? "text-right" : "text-left"}`}>
+                      {howToApplyText}
+                    </p>
+                  </div>
+                )}
+
+                {/* Skin Compatibility Section */}
+                <div className="border-t border-[#EAE3D2] pt-3">
+                  <h4 className={`text-xs font-bold text-[#2C2623] uppercase tracking-wider mb-1 ${isArabic ? "text-right" : "text-left"}`}>
+                    {isArabic ? "مناسب لجميع أنواع البشرة" : "SUITABLE FOR ALL SKIN TYPES"}
+                  </h4>
+                  <p className={`text-xs text-[#6B6155] leading-relaxed ${isArabic ? "text-right" : "text-left"}`}>
+                    {isArabic
+                      ? "تم تصميم هذا المنتج بعناية ليناسب جميع أنواع البشرة بلطف وفعالية دون التسبب بتهيج."
+                      : "Formulated to be gentle yet highly effective, suitable for normal, oily, combination, and sensitive skin types."}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
